@@ -6,14 +6,14 @@ import classnames from 'classnames';
 /**
  * WordPress dependencies
  */
-import { isBlobURL } from '@wordpress/blob';
-import { getBlockSupport } from '@wordpress/blocks';
-import { focus } from '@wordpress/dom';
 import {
+	FontSizePicker,
+	__experimentalNumberControl as NumberControl,
+	__experimentalToolsPanel as ToolsPanel,
+	__experimentalToolsPanelItem as ToolsPanelItem,
 	ToggleControl,
 	__experimentalToggleGroupControl as ToggleGroupControl,
 	__experimentalToggleGroupControlOption as ToggleGroupControlOption,
-	__experimentalToolsPanelItem as ToolsPanelItem,
 	__experimentalUnitControl as UnitControl,
 	__experimentalVStack as VStack,
 	DropZone,
@@ -25,37 +25,26 @@ import {
 	__experimentalHStack as HStack,
 	__experimentalTruncate as Truncate,
 } from '@wordpress/components';
-import { useDispatch, useSelect } from '@wordpress/data';
-import { Platform, useCallback, useRef } from '@wordpress/element';
 import { __, sprintf } from '@wordpress/i18n';
 import { store as noticesStore } from '@wordpress/notices';
 import { getFilename } from '@wordpress/url';
+import { Platform, useCallback, useRef } from '@wordpress/element';
+import { useDispatch, useSelect } from '@wordpress/data';
+import { focus } from '@wordpress/dom';
+import { isBlobURL } from '@wordpress/blob';
 
 /**
  * Internal dependencies
  */
-import InspectorControls from '../components/inspector-controls';
-import MediaReplaceFlow from '../components/media-replace-flow';
-import { useSettings } from '../components/use-settings';
-import { cleanEmptyObject } from './utils';
-import { store as blockEditorStore } from '../store';
+import { TOOLSPANEL_DROPDOWNMENU_PROPS } from './utils';
+import { setImmutably } from '../../utils/object';
+import MediaReplaceFlow from '../media-replace-flow';
+import { store as blockEditorStore } from '../../store';
 
-export const BACKGROUND_SUPPORT_KEY = 'background';
 export const IMAGE_BACKGROUND_TYPE = 'image';
 
-/**
- * Checks if there is a current value in the background image block support
- * attributes.
- *
- * @param {Object} style Style attribute.
- * @return {boolean}     Whether or not the block has a background image value set.
- */
-export function hasBackgroundImageValue( style ) {
-	const hasValue =
-		!! style?.background?.backgroundImage?.id ||
-		!! style?.background?.backgroundImage?.url;
-
-	return hasValue;
+export function useHasBackgroundPanel( settings ) {
+	return !! settings?.background?.backgroundImage;
 }
 
 /**
@@ -74,84 +63,51 @@ export function hasBackgroundSizeValue( style ) {
 }
 
 /**
- * Determine whether there is block support for background.
+ * Checks if there is a current value in the background image block support
+ * attributes.
  *
- * @param {string} blockName Block name.
- * @param {string} feature   Background image feature to check for.
- *
- * @return {boolean} Whether there is support.
+ * @param {Object} style Style attribute.
+ * @return {boolean}     Whether or not the block has a background image value set.
  */
-export function hasBackgroundSupport( blockName, feature = 'any' ) {
-	if ( Platform.OS !== 'web' ) {
-		return false;
-	}
+export function hasBackgroundImageValue( style ) {
+	const hasValue =
+		!! style?.background?.backgroundImage?.id ||
+		!! style?.background?.backgroundImage?.url;
 
-	const support = getBlockSupport( blockName, BACKGROUND_SUPPORT_KEY );
-
-	if ( support === true ) {
-		return true;
-	}
-
-	if ( feature === 'any' ) {
-		return (
-			!! support?.backgroundImage ||
-			!! support?.backgroundSize ||
-			!! support?.backgroundRepeat
-		);
-	}
-
-	return !! support?.[ feature ];
+	return hasValue;
 }
 
-/**
- * Resets the background image block support attributes. This can be used when disabling
- * the background image controls for a block via a `ToolsPanel`.
- *
- * @param {Object}   style         Style attribute.
- * @param {Function} setAttributes Function to set block's attributes.
- */
-export function resetBackgroundImage( style = {}, setAttributes ) {
-	setAttributes( {
-		style: cleanEmptyObject( {
-			...style,
-			background: {
-				...style?.background,
-				backgroundImage: undefined,
-			},
-		} ),
-	} );
-}
+export const coordsToBackgroundPosition = ( value ) => {
+	if ( ! value || ( isNaN( value.x ) && isNaN( value.y ) ) ) {
+		return undefined;
+	}
 
-/**
- * Resets the background size block support attributes. This can be used when disabling
- * the background size controls for a block via a `ToolsPanel`.
- *
- * @param {Object}   style         Style attribute.
- * @param {Function} setAttributes Function to set block's attributes.
- */
-function resetBackgroundSize( style = {}, setAttributes ) {
-	setAttributes( {
-		style: cleanEmptyObject( {
-			...style,
-			background: {
-				...style?.background,
-				backgroundPosition: undefined,
-				backgroundRepeat: undefined,
-				backgroundSize: undefined,
-			},
-		} ),
-	} );
-}
+	const x = isNaN( value.x ) ? 0.5 : value.x;
+	const y = isNaN( value.y ) ? 0.5 : value.y;
 
-/**
- * Generates a CSS class name if an background image is set.
- *
- * @param {Object} style A block's style attribute.
- *
- * @return {string} CSS class name.
- */
-export function getBackgroundImageClasses( style ) {
-	return hasBackgroundImageValue( style ) ? 'has-background' : '';
+	return `${ x * 100 }% ${ y * 100 }%`;
+};
+
+export const backgroundPositionToCoords = ( value ) => {
+	if ( ! value ) {
+		return { x: undefined, y: undefined };
+	}
+
+	let [ x, y ] = value.split( ' ' ).map( ( v ) => parseFloat( v ) / 100 );
+	x = isNaN( x ) ? undefined : x;
+	y = isNaN( y ) ? x : y;
+
+	return { x, y };
+};
+
+function backgroundSizeHelpText( value ) {
+	if ( value === 'cover' || value === undefined ) {
+		return __( 'Image covers the space evenly.' );
+	}
+	if ( value === 'contain' ) {
+		return __( 'Image is contained without distortion.' );
+	}
+	return __( 'Specify a fixed width.' );
 }
 
 function InspectorImagePreview( { label, filename, url: imgUrl } ) {
@@ -199,23 +155,23 @@ function InspectorImagePreview( { label, filename, url: imgUrl } ) {
 	);
 }
 
-function BackgroundImagePanelItem( {
-	clientId,
+function BackgroundImageToolsPanelItem( {
+	panelId,
 	isShownByDefault,
-	setAttributes,
+	onChange,
+	style,
 } ) {
-	const { style, mediaUpload } = useSelect(
+	const { mediaUpload } = useSelect(
 		( select ) => {
-			const { getBlockAttributes, getSettings } =
-				select( blockEditorStore );
+			const { getSettings } = select( blockEditorStore );
 
 			return {
-				style: getBlockAttributes( clientId )?.style,
 				mediaUpload: getSettings().mediaUpload,
 			};
 		},
-		[ clientId ]
+		[ panelId ]
 	);
+
 	const { id, title, url } = style?.background?.backgroundImage || {};
 
 	const replaceContainerRef = useRef();
@@ -225,21 +181,18 @@ function BackgroundImagePanelItem( {
 		createErrorNotice( message, { type: 'snackbar' } );
 	};
 
+	const resetBackgroundImage = () =>
+		onChange(
+			setImmutably(
+				style,
+				[ 'background', 'backgroundImage' ],
+				undefined
+			)
+		);
+
 	const onSelectMedia = ( media ) => {
 		if ( ! media || ! media.url ) {
-			const newStyle = {
-				...style,
-				background: {
-					...style?.background,
-					backgroundImage: undefined,
-				},
-			};
-
-			const newAttributes = {
-				style: cleanEmptyObject( newStyle ),
-			};
-
-			setAttributes( newAttributes );
+			resetBackgroundImage();
 			return;
 		}
 
@@ -261,24 +214,14 @@ function BackgroundImagePanelItem( {
 			return;
 		}
 
-		const newStyle = {
-			...style,
-			background: {
-				...style?.background,
-				backgroundImage: {
-					url: media.url,
-					id: media.id,
-					source: 'file',
-					title: media.title || undefined,
-				},
-			},
-		};
-
-		const newAttributes = {
-			style: cleanEmptyObject( newStyle ),
-		};
-
-		setAttributes( newAttributes );
+		onChange(
+			setImmutably( style, [ 'background', 'backgroundImage' ], {
+				url: media.url,
+				id: media.id,
+				source: 'file',
+				title: media.title || undefined,
+			} )
+		);
 	};
 
 	const onFilesDrop = ( filesList ) => {
@@ -312,10 +255,10 @@ function BackgroundImagePanelItem( {
 			className="single-column"
 			hasValue={ () => hasValue }
 			label={ __( 'Background image' ) }
-			onDeselect={ () => resetBackgroundImage( style, setAttributes ) }
+			onDeselect={ resetBackgroundImage }
 			isShownByDefault={ isShownByDefault }
 			resetAllFilter={ resetAllFilter }
-			panelId={ clientId }
+			panelId={ panelId }
 		>
 			<div
 				className="block-editor-hooks__background__inspector-media-replace-container"
@@ -347,7 +290,7 @@ function BackgroundImagePanelItem( {
 								// closed and focus is redirected to the dropdown toggle button.
 								toggleButton?.focus();
 								toggleButton?.click();
-								resetBackgroundImage( style, setAttributes );
+								resetBackgroundImage();
 							} }
 						>
 							{ __( 'Reset ' ) }
@@ -363,50 +306,12 @@ function BackgroundImagePanelItem( {
 	);
 }
 
-function backgroundSizeHelpText( value ) {
-	if ( value === 'cover' || value === undefined ) {
-		return __( 'Image covers the space evenly.' );
-	}
-	if ( value === 'contain' ) {
-		return __( 'Image is contained without distortion.' );
-	}
-	return __( 'Specify a fixed width.' );
-}
-
-export const coordsToBackgroundPosition = ( value ) => {
-	if ( ! value || ( isNaN( value.x ) && isNaN( value.y ) ) ) {
-		return undefined;
-	}
-
-	const x = isNaN( value.x ) ? 0.5 : value.x;
-	const y = isNaN( value.y ) ? 0.5 : value.y;
-
-	return `${ x * 100 }% ${ y * 100 }%`;
-};
-
-export const backgroundPositionToCoords = ( value ) => {
-	if ( ! value ) {
-		return { x: undefined, y: undefined };
-	}
-
-	let [ x, y ] = value.split( ' ' ).map( ( v ) => parseFloat( v ) / 100 );
-	x = isNaN( x ) ? undefined : x;
-	y = isNaN( y ) ? x : y;
-
-	return { x, y };
-};
-
-function BackgroundSizePanelItem( {
-	clientId,
+function BackgroundSizeToolsPanelItem( {
+	panelId,
 	isShownByDefault,
-	setAttributes,
+	onChange,
+	style,
 } ) {
-	const style = useSelect(
-		( select ) =>
-			select( blockEditorStore ).getBlockAttributes( clientId )?.style,
-		[ clientId ]
-	);
-
 	const sizeValue = style?.background?.backgroundSize;
 	const repeatValue = style?.background?.backgroundRepeat;
 
@@ -463,42 +368,42 @@ function BackgroundSizePanelItem( {
 			nextRepeat = undefined;
 		}
 
-		setAttributes( {
-			style: cleanEmptyObject( {
-				...style,
-				background: {
-					...style?.background,
-					backgroundRepeat: nextRepeat,
-					backgroundSize: next,
-				},
-			} ),
-		} );
+		onChange(
+			setImmutably( style, [ 'background' ], {
+				...style?.background,
+				backgroundRepeat: nextRepeat,
+				backgroundSize: next,
+			} )
+		);
 	};
 
-	const updateBackgroundPosition = ( next ) => {
-		setAttributes( {
-			style: cleanEmptyObject( {
-				...style,
-				background: {
-					...style?.background,
-					backgroundPosition: coordsToBackgroundPosition( next ),
-				},
-			} ),
-		} );
-	};
+	const updateBackgroundPosition = ( next ) =>
+		onChange(
+			setImmutably(
+				style,
+				[ 'background', 'backgroundPosition' ],
+				coordsToBackgroundPosition( next )
+			)
+		);
 
-	const toggleIsRepeated = () => {
-		setAttributes( {
-			style: cleanEmptyObject( {
-				...style,
-				background: {
-					...style?.background,
-					backgroundRepeat:
-						repeatCheckedValue === true ? 'no-repeat' : undefined,
-				},
-			} ),
-		} );
-	};
+	const toggleIsRepeated = () =>
+		onChange(
+			setImmutably(
+				style,
+				[ 'background', 'backgroundRepeat' ],
+				repeatCheckedValue === true ? 'no-repeat' : undefined
+			)
+		);
+
+	const resetBackgroundSize = () =>
+		onChange(
+			setImmutably( style, [ 'background' ], {
+				...style?.background,
+				backgroundPosition: undefined,
+				backgroundRepeat: undefined,
+				backgroundSize: undefined,
+			} )
+		);
 
 	return (
 		<VStack
@@ -507,10 +412,10 @@ function BackgroundSizePanelItem( {
 			className="single-column"
 			hasValue={ () => hasValue }
 			label={ __( 'Size' ) }
-			onDeselect={ () => resetBackgroundSize( style, setAttributes ) }
+			onDeselect={ resetBackgroundSize }
 			isShownByDefault={ isShownByDefault }
 			resetAllFilter={ resetAllFilter }
-			panelId={ clientId }
+			panelId={ panelId }
 		>
 			<FocalPointPicker
 				__next40pxDefaultSize
@@ -565,42 +470,73 @@ function BackgroundSizePanelItem( {
 	);
 }
 
-export function BackgroundImagePanel( { clientId, name, setAttributes, settings } ) {
-	const [ backgroundImage, backgroundSize ] = useSettings(
-		'background.backgroundImage',
-		'background.backgroundSize'
-	);
-
-	if (
-		! backgroundImage ||
-		! hasBackgroundSupport( name, 'backgroundImage' )
-	) {
-		return null;
-	}
-
-	const showBackgroundSize = !! (
-		backgroundSize && hasBackgroundSupport( name, 'backgroundSize' )
-	);
-
-	const defaultControls = getBlockSupport( name, [
-		BACKGROUND_SUPPORT_KEY,
-		'__experimentalDefaultControls',
-	] );
+function BackgroundToolsPanel( {
+	resetAllFilter,
+	onChange,
+	value,
+	panelId,
+	children,
+} ) {
+	const resetAll = () => {
+		const updatedValue = resetAllFilter( value );
+		onChange( updatedValue );
+	};
 
 	return (
-		<InspectorControls group="background">
-			<BackgroundImagePanelItem
-				isShownByDefault={ defaultControls?.backgroundImage }
-				clientId={ clientId }
-				setAttributes={ setAttributes }
+		<ToolsPanel
+			label={ __( 'Background' ) }
+			resetAll={ resetAll }
+			panelId={ panelId }
+			dropdownMenuProps={ TOOLSPANEL_DROPDOWNMENU_PROPS }
+		>
+			{ children }
+		</ToolsPanel>
+	);
+}
+
+const DEFAULT_CONTROLS = {
+	backgroundImage: true,
+	backgroundSize: true,
+};
+
+export default function BackgroundPanel( {
+	as: Wrapper = BackgroundToolsPanel,
+	value,
+	onChange,
+	inheritedValue = value,
+	settings,
+	panelId,
+	defaultControls = DEFAULT_CONTROLS,
+} ) {
+	const hasBackGroundSizeControl = !! settings?.background?.backgroundSize;
+	const resetAllFilter = useCallback( ( previousValue ) => {
+		return {
+			...previousValue,
+			background: {},
+		};
+	}, [] );
+
+	return (
+		<Wrapper
+			resetAllFilter={ resetAllFilter }
+			value={ value }
+			onChange={ onChange }
+			panelId={ panelId }
+		>
+			<BackgroundImageToolsPanelItem
+				onChange={ onChange }
+				panelId={ panelId }
+				isShownByDefault={ defaultControls.backgroundImage }
+				style={ value }
 			/>
-			{ showBackgroundSize && (
-				<BackgroundSizePanelItem
-					isShownByDefault={ defaultControls?.backgroundSize }
-					clientId={ clientId }
-					setAttributes={ setAttributes }
+			{ hasBackGroundSizeControl && (
+				<BackgroundSizeToolsPanelItem
+					onChange={ onChange }
+					panelId={ panelId }
+					isShownByDefault={ defaultControls.backgroundSize }
+					style={ value }
 				/>
 			) }
-		</InspectorControls>
+		</Wrapper>
 	);
 }
