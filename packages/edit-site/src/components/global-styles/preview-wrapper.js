@@ -23,12 +23,32 @@ const { useGlobalStyle, useGlobalStylesOutput } = unlock(
 	blockEditorPrivateApis
 );
 
-const firstFrame = {
+const firstFrameVariants = {
 	start: {
 		scale: 1,
 		opacity: 1,
 	},
 	hover: {
+		scale: 0,
+		opacity: 0,
+	},
+};
+
+const midFrameVariants = {
+	hover: {
+		opacity: 1,
+	},
+	start: {
+		opacity: 0.5,
+	},
+};
+
+const secondFrameVariants = {
+	hover: {
+		scale: 1,
+		opacity: 1,
+	},
+	start: {
 		scale: 0,
 		opacity: 0,
 	},
@@ -43,8 +63,16 @@ const THROTTLE_OPTIONS = {
 	leading: true,
 	trailing: true,
 };
+const noop = () => {};
 
-const PreviewWrapper = ( { children, label, isFocused, withHoverView } ) => {
+const PreviewWrapper = ( {
+	firstFrame = noop,
+	midFrame = noop,
+	secondFrame = noop,
+	label,
+	isFocused,
+	withHoverView,
+} ) => {
 	const [ backgroundColor = 'white' ] = useGlobalStyle( 'color.background' );
 	const [ gradientValue ] = useGlobalStyle( 'color.gradient' );
 	const [ styles ] = useGlobalStylesOutput();
@@ -148,7 +176,47 @@ const PreviewWrapper = ( { children, label, isFocused, withHoverView } ) => {
 								: 'start'
 						}
 					>
-						{ children( { firstFrame, ratio } ) }
+						{ firstFrame && (
+							<motion.div
+								variants={ firstFrameVariants }
+								style={ {
+									height: '100%',
+									overflow: 'hidden',
+								} }
+							>
+								{ firstFrame( ratio ) }
+							</motion.div>
+						) }
+						{ midFrame && (
+							<motion.div
+								variants={ withHoverView && midFrameVariants }
+								style={ {
+									height: '100%',
+									width: '100%',
+									position: 'absolute',
+									top: 0,
+									overflow: 'hidden',
+									filter: 'blur(60px)',
+									opacity: 0.1,
+								} }
+							>
+								{ midFrame( ratio ) }
+							</motion.div>
+						) }
+						{ secondFrame && (
+							<motion.div
+								variants={ secondFrameVariants }
+								style={ {
+									height: '100%',
+									width: '100%',
+									overflow: 'hidden',
+									position: 'absolute',
+									top: 0,
+								} }
+							>
+								{ secondFrame( ratio ) }
+							</motion.div>
+						) }
 					</motion.div>
 				</Iframe>
 			) }
