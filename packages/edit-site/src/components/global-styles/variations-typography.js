@@ -71,7 +71,7 @@ const TypePreview = ( { variation } ) => {
 		? getFamilyPreviewStyle( headingFontFamilies )
 		: {};
 	return (
-		<motion.div
+		<motion.span
 			className="edit-site-global-styles-type-preview"
 			animate={ {
 				scale: 1,
@@ -92,7 +92,7 @@ const TypePreview = ( { variation } ) => {
 			<span style={ bodyPreviewStyle }>
 				{ _x( 'a', 'Lowercase letter A' ) }
 			</span>
-		</motion.div>
+		</motion.span>
 	);
 };
 
